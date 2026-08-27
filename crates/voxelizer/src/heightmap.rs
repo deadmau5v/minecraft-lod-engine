@@ -6,8 +6,9 @@
 use crate::palette_lut::{GlobalPaletteLut, FLAG_AIR};
 use mca_parser::ChunkData;
 
-/// Vertical column voxel run segment.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Vertical column voxel run segment (12 bytes, Copy, zero heap allocations).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ColumnVoxelPoint {
     /// Bottom Y coordinate of continuous segment.
     pub y_min: i16,
@@ -15,8 +16,6 @@ pub struct ColumnVoxelPoint {
     pub y_max: i16,
     /// 32-bit ARGB packed color.
     pub color: u32,
-    /// Canonical Minecraft block state name.
-    pub block_name: String,
     /// Material property bitflags.
     pub flags: u16,
 }
@@ -52,7 +51,9 @@ impl ChunkVoxelGrid {
 
         // Initialize 256 columns
         let mut columns: Vec<ColumnData> = (0..256)
-            .map(|_| ColumnData { points: Vec::new() })
+            .map(|_| ColumnData {
+                points: Vec::with_capacity(8),
+            })
             .collect();
 
         // Sort sections by Y ascending
@@ -64,16 +65,13 @@ impl ChunkVoxelGrid {
             let palette_materials: Vec<_> = section
                 .palette
                 .iter()
-                .map(|name| {
-                    let mat = lut.get_material_by_name(name);
-                    (name.clone(), mat)
-                })
+                .map(|name| lut.get_material_by_name(name))
                 .collect();
 
             for z in 0..16 {
                 for x in 0..16 {
                     let col_idx = x + z * 16;
-                    let mut cur_run_name: Option<String> = None;
+                    let mut has_run = false;
                     let mut cur_run_color: u32 = 0;
                     let mut cur_run_flags: u16 = 0;
                     let mut cur_run_min_y: i16 = 0;
@@ -82,7 +80,7 @@ impl ChunkVoxelGrid {
                     for y_rel in 0..16 {
                         let block_idx = (y_rel * 256) + (z * 16) + x;
                         let pal_idx = section.block_indices[block_idx] as usize;
-                        let (name, mat) = if pal_idx < palette_materials.len() {
+                        let mat = if pal_idx < palette_materials.len() {
                             &palette_materials[pal_idx]
                         } else if !palette_materials.is_empty() {
                             &palette_materials[0]
@@ -92,14 +90,14 @@ impl ChunkVoxelGrid {
 
                         if (mat.flags & FLAG_AIR) != 0 || mat.base_color == 0 {
                             // Air block finishes any current run
-                            if let Some(run_name) = cur_run_name.take() {
+                            if has_run {
                                 columns[col_idx].points.push(ColumnVoxelPoint {
                                     y_min: cur_run_min_y,
                                     y_max: cur_run_max_y,
                                     color: cur_run_color,
-                                    block_name: run_name,
                                     flags: cur_run_flags,
                                 });
+                                has_run = false;
                             }
                             continue;
                         }
@@ -112,39 +110,35 @@ impl ChunkVoxelGrid {
                             max_chunk_y = abs_y;
                         }
 
-                        match cur_run_name.as_ref() {
-                            Some(existing_name) if existing_name == name => {
-                                // Extend current run
-                                cur_run_max_y = abs_y;
+                        if has_run && cur_run_color == mat.base_color && cur_run_flags == mat.flags
+                        {
+                            // Extend current run
+                            cur_run_max_y = abs_y;
+                        } else {
+                            // Flush previous run
+                            if has_run {
+                                columns[col_idx].points.push(ColumnVoxelPoint {
+                                    y_min: cur_run_min_y,
+                                    y_max: cur_run_max_y,
+                                    color: cur_run_color,
+                                    flags: cur_run_flags,
+                                });
                             }
-                            _ => {
-                                // Flush previous run
-                                if let Some(run_name) = cur_run_name.take() {
-                                    columns[col_idx].points.push(ColumnVoxelPoint {
-                                        y_min: cur_run_min_y,
-                                        y_max: cur_run_max_y,
-                                        color: cur_run_color,
-                                        block_name: run_name,
-                                        flags: cur_run_flags,
-                                    });
-                                }
-                                // Start new run
-                                cur_run_name = Some(name.clone());
-                                cur_run_color = mat.base_color;
-                                cur_run_flags = mat.flags;
-                                cur_run_min_y = abs_y;
-                                cur_run_max_y = abs_y;
-                            }
+                            // Start new run
+                            has_run = true;
+                            cur_run_color = mat.base_color;
+                            cur_run_flags = mat.flags;
+                            cur_run_min_y = abs_y;
+                            cur_run_max_y = abs_y;
                         }
                     }
 
                     // Flush end of section run
-                    if let Some(run_name) = cur_run_name.take() {
+                    if has_run {
                         columns[col_idx].points.push(ColumnVoxelPoint {
                             y_min: cur_run_min_y,
                             y_max: cur_run_max_y,
                             color: cur_run_color,
-                            block_name: run_name,
                             flags: cur_run_flags,
                         });
                     }
@@ -159,7 +153,10 @@ impl ChunkVoxelGrid {
             let mut merged: Vec<ColumnVoxelPoint> = Vec::with_capacity(col.points.len());
             for pt in col.points {
                 if let Some(last) = merged.last_mut() {
-                    if last.block_name == pt.block_name && last.y_max + 1 == pt.y_min {
+                    if last.color == pt.color
+                        && last.flags == pt.flags
+                        && last.y_max + 1 == pt.y_min
+                    {
                         last.y_max = pt.y_max;
                         continue;
                     }

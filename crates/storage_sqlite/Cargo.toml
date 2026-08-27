@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 ahash = { workspace = true }
 byteorder = { workspace = true }
+rayon = { workspace = true }
 rusqlite = { workspace = true }
 zstd = { workspace = true }
 voxelizer = { workspace = true }

@@ -6,6 +6,7 @@
 use crate::blob_codec::{encode_lod_section_to_dh_blob_with_level, EncodedFullData};
 use crate::schema::init_dh_database_schema;
 use anyhow::Result;
+use rayon::prelude::*;
 use rusqlite::{params, Connection, OpenFlags};
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -78,6 +79,15 @@ impl DhSqliteBatchWriter {
             .map(|d| d.as_millis() as i64)
             .unwrap_or(0);
 
+        // Encode all sections in parallel using Rayon threads
+        let encoded_sections: Vec<(&LodSection, EncodedFullData)> = sections
+            .par_iter()
+            .map(|sec| {
+                let encoded = encode_lod_section_to_dh_blob_with_level(sec, zstd_level)?;
+                Ok((sec, encoded))
+            })
+            .collect::<Result<Vec<_>>>()?;
+
         let tx = self.conn.transaction()?;
         {
             let mut stmt_data = tx.prepare_cached(
@@ -89,9 +99,7 @@ impl DhSqliteBatchWriter {
                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, NULL, NULL, 2, 4, 0, ?7, ?7, 0)",
             )?;
 
-            for sec in sections {
-                let encoded: EncodedFullData =
-                    encode_lod_section_to_dh_blob_with_level(sec, zstd_level)?;
+            for (sec, encoded) in encoded_sections {
                 stmt_data.execute(params![
                     sec.detail_level,
                     sec.pos_x,

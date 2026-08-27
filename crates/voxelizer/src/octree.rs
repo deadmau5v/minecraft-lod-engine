@@ -120,9 +120,9 @@ impl LodSection {
 
 /// Downsamples a 2x2 neighborhood of vertical columns into consolidated point runs.
 fn downsample_2x2_columns(cols: &[&[ColumnVoxelPoint]]) -> Vec<ColumnVoxelPoint> {
-    let mut all_points: Vec<&ColumnVoxelPoint> = Vec::new();
+    let mut all_points: Vec<ColumnVoxelPoint> = Vec::new();
     for c in cols {
-        for pt in *c {
+        for &pt in *c {
             all_points.push(pt);
         }
     }
@@ -135,7 +135,6 @@ fn downsample_2x2_columns(cols: &[&[ColumnVoxelPoint]]) -> Vec<ColumnVoxelPoint>
     let mut max_y = i16::MIN;
     let mut colors = [0u32; 8];
     let mut sample_count = 0;
-    let mut rep_name = String::new();
     let mut rep_flags = 0;
 
     for pt in all_points {
@@ -149,8 +148,7 @@ fn downsample_2x2_columns(cols: &[&[ColumnVoxelPoint]]) -> Vec<ColumnVoxelPoint>
             colors[sample_count] = pt.color;
             sample_count += 1;
         }
-        if rep_name.is_empty() {
-            rep_name = pt.block_name.clone();
+        if rep_flags == 0 {
             rep_flags = pt.flags;
         }
     }
@@ -161,7 +159,6 @@ fn downsample_2x2_columns(cols: &[&[ColumnVoxelPoint]]) -> Vec<ColumnVoxelPoint>
         y_min: min_y,
         y_max: max_y,
         color: blended_color,
-        block_name: rep_name,
         flags: rep_flags,
     }]
 }
