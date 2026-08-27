@@ -864,26 +864,26 @@ fn find_mca_files_in_dir(
         let p = entry.path();
         if p.is_dir() {
             find_mca_files_in_dir(&p, tasks, min_rx, max_rx, min_rz, max_rz)?;
-        } else if p.is_file()
-            && p.extension().is_some_and(|ext| ext == "mca")
-            && p.parent()
-                .and_then(Path::file_name)
-                .is_some_and(|name| name == "region")
-        {
-            let filename = p.file_name().unwrap_or_default().to_string_lossy();
-            if let Some((rx, rz)) = parse_region_coords(&filename) {
-                if rx >= min_rx && rx <= max_rx && rz >= min_rz && rz <= max_rz {
-                    let region_root = p
-                        .parent()
-                        .map(|parent| parent.display().to_string())
-                        .unwrap_or_else(|| "region".to_string());
-                    tasks.push(RegionTask {
-                        rx,
-                        rz,
-                        path: Some(p),
-                        data: None,
-                        region_root,
-                    });
+        } else if p.is_file() && p.extension().is_some_and(|ext| ext == "mca") {
+            let parent_name = p.parent().and_then(Path::file_name);
+            let is_poi_or_entities =
+                parent_name.is_some_and(|name| name == "poi" || name == "entities");
+            if !is_poi_or_entities {
+                let filename = p.file_name().unwrap_or_default().to_string_lossy();
+                if let Some((rx, rz)) = parse_region_coords(&filename) {
+                    if rx >= min_rx && rx <= max_rx && rz >= min_rz && rz <= max_rz {
+                        let region_root = p
+                            .parent()
+                            .map(|parent| parent.display().to_string())
+                            .unwrap_or_else(|| "region".to_string());
+                        tasks.push(RegionTask {
+                            rx,
+                            rz,
+                            path: Some(p),
+                            data: None,
+                            region_root,
+                        });
+                    }
                 }
             }
         }
