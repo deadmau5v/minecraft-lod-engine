@@ -375,10 +375,31 @@ fn run_voxy_pipeline(cfg: CliConfig) -> Result<()> {
 
     let center_chunk_x = cfg.cx.div_euclid(16);
     let center_chunk_z = cfg.cz.div_euclid(16);
-    let min_cx = center_chunk_x - cfg.radius;
-    let max_cx = center_chunk_x + cfg.radius;
-    let min_cz = center_chunk_z - cfg.radius;
-    let max_cz = center_chunk_z + cfg.radius;
+    // Align Voxy chunk boundaries to 2x2 grid to prevent unpopulated section seams
+    let raw_min_cx = center_chunk_x - cfg.radius;
+    let raw_max_cx = center_chunk_x + cfg.radius;
+    let raw_min_cz = center_chunk_z - cfg.radius;
+    let raw_max_cz = center_chunk_z + cfg.radius;
+    let min_cx = if raw_min_cx % 2 != 0 {
+        raw_min_cx - 1
+    } else {
+        raw_min_cx
+    };
+    let max_cx = if raw_max_cx % 2 == 0 {
+        raw_max_cx + 1
+    } else {
+        raw_max_cx
+    };
+    let min_cz = if raw_min_cz % 2 != 0 {
+        raw_min_cz - 1
+    } else {
+        raw_min_cz
+    };
+    let max_cz = if raw_max_cz % 2 == 0 {
+        raw_max_cz + 1
+    } else {
+        raw_max_cz
+    };
 
     if !cfg.quiet {
         println!(
