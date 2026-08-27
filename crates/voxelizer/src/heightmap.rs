@@ -49,24 +49,49 @@ impl ChunkVoxelGrid {
         let mut min_chunk_y: i16 = 320;
         let mut max_chunk_y: i16 = -64;
 
-        // Initialize 256 columns
+        // Initialize 256 columns with small pre-allocated capacity
         let mut columns: Vec<ColumnData> = (0..256)
             .map(|_| ColumnData {
                 points: Vec::with_capacity(8),
             })
             .collect();
 
-        // Sort sections by Y ascending
-        let mut sorted_sections = chunk.sections.clone();
-        sorted_sections.sort_by_key(|s| s.y);
+        // Filter and sort non-empty sections by Y ascending
+        let mut active_sections: Vec<&mca_parser::SectionData> =
+            chunk.sections.iter().filter(|s| !s.is_empty_air).collect();
+        active_sections.sort_by_key(|s| s.y);
 
-        for section in &sorted_sections {
+        for section in active_sections {
             let sec_y_base = (section.y as i16) * 16;
             let palette_materials: Vec<_> = section
                 .palette
                 .iter()
                 .map(|name| lut.get_material_by_name(name))
                 .collect();
+
+            // Fast-path: single uniform solid material across whole 16x16x16 section
+            if palette_materials.len() == 1 {
+                let mat = &palette_materials[0];
+                if (mat.flags & FLAG_AIR) == 0 && mat.base_color != 0 {
+                    let sec_y_end = sec_y_base + 15;
+                    if sec_y_base < min_chunk_y {
+                        min_chunk_y = sec_y_base;
+                    }
+                    if sec_y_end > max_chunk_y {
+                        max_chunk_y = sec_y_end;
+                    }
+                    let pt = ColumnVoxelPoint {
+                        y_min: sec_y_base,
+                        y_max: sec_y_end,
+                        color: mat.base_color,
+                        flags: mat.flags,
+                    };
+                    for col in columns.iter_mut() {
+                        col.points.push(pt);
+                    }
+                    continue;
+                }
+            }
 
             for z in 0..16 {
                 for x in 0..16 {

@@ -1,7 +1,8 @@
 //! End-to-end execution pipeline for MCA LOD baking.
 //!
 //! Orchestrates region discovery, parallel decompress-parse-voxelize pipelines,
-//! multi-level octree downsampling, and atomic SQLite transaction commits.
+//! zero-copy Level 0 LOD assembly, multi-level octree downsampling (with Metal GPU/SIMD),
+//! and atomic SQLite transaction commits.
 
 use crate::config::CliConfig;
 use anyhow::{bail, Context, Result};
@@ -16,6 +17,9 @@ use std::sync::Arc;
 use std::time::Instant;
 use storage_sqlite::{ChunkHashEntry, DhSqliteBatchWriter};
 use voxelizer::{ChunkVoxelGrid, LodSection};
+
+#[cfg(all(target_os = "macos", feature = "metal"))]
+use voxelizer::{is_metal_gpu_available, metal_downsample_quadrant};
 
 /// Work descriptor for a single Minecraft region file (`r.X.Z.mca`).
 pub struct RegionTask {
@@ -42,6 +46,11 @@ pub fn run_pipeline(cfg: CliConfig) -> Result<()> {
             .ok();
     }
 
+    #[cfg(all(target_os = "macos", feature = "metal"))]
+    let gpu_accelerated = is_metal_gpu_available();
+    #[cfg(not(all(target_os = "macos", feature = "metal")))]
+    let gpu_accelerated = false;
+
     if !cfg.quiet {
         println!(
             "================================================================================"
@@ -60,6 +69,14 @@ pub fn run_pipeline(cfg: CliConfig) -> Result<()> {
             cfg.radius * 16
         );
         println!("Concurrency      : {} Worker Threads", thread_count);
+        println!(
+            "Hardware Accel   : {}",
+            if gpu_accelerated {
+                "Apple Metal MPS (Zero-Copy Unified GPU)"
+            } else {
+                "Host CPU SIMD (AVX2 / NEON)"
+            }
+        );
         println!("LOD Detail Depth : 0..={}", cfg.detail_levels);
         println!("Zstandard Level  : {}", cfg.zstd_level);
         println!(
@@ -98,7 +115,7 @@ pub fn run_pipeline(cfg: CliConfig) -> Result<()> {
         return Ok(());
     }
 
-    // Stage 2: Parallel MCA Decompress + NBT Parse + Voxelize
+    // Stage 2: Parallel MCA Decompress + NBT Parse + Zero-Copy Region-Local LOD 0 Assembly
     let t1 = Instant::now();
     let total_chunks_counter = Arc::new(AtomicUsize::new(0));
 
@@ -115,23 +132,24 @@ pub fn run_pipeline(cfg: CliConfig) -> Result<()> {
     };
 
     let counter_ref = Arc::clone(&total_chunks_counter);
-    let parsed_results: Vec<(Vec<ChunkVoxelGrid>, Vec<ChunkHashEntry>)> = region_tasks
+    let parsed_results: Vec<(Vec<LodSection>, Vec<ChunkHashEntry>)> = region_tasks
         .into_par_iter()
         .map(|task| {
-            let mut grids = Vec::new();
+            let mut local_sections: Vec<Option<LodSection>> = (0..64).map(|_| None).collect();
             let mut hashes = Vec::new();
+            let mut chunk_count = 0;
 
             let region_res = if let Some(ref d) = task.data {
                 McaRegion::from_bytes(d.clone(), task.rx, task.rz)
             } else if let Some(ref p) = task.path {
                 McaRegion::open(p, task.rx, task.rz)
             } else {
-                return (grids, hashes);
+                return (Vec::new(), hashes);
             };
 
             let region = match region_res {
                 Ok(r) => r,
-                Err(_) => return (grids, hashes),
+                Err(_) => return (Vec::new(), hashes),
             };
 
             let present_chunks = region.iter_present_chunks();
@@ -158,8 +176,8 @@ pub fn run_pipeline(cfg: CliConfig) -> Result<()> {
                 });
 
                 if let Some(chunk_nbt) = parse_res {
-                    let voxel_grid = ChunkVoxelGrid::from_chunk_data(&chunk_nbt);
-                    grids.push(voxel_grid);
+                    let mut voxel_grid = ChunkVoxelGrid::from_chunk_data(&chunk_nbt);
+                    chunk_count += 1;
 
                     // Deterministic 32-bit chunk state hash
                     let mut h: i32 = 1;
@@ -173,14 +191,48 @@ pub fn run_pipeline(cfg: CliConfig) -> Result<()> {
                         chunk_z,
                         hash: h,
                     });
+
+                    // Fast Zero-Copy Placement into 8x8 LOD 0 Section
+                    let local_sec_x = loc.local_x >> 2;
+                    let local_sec_z = loc.local_z >> 2;
+                    let sec_idx = local_sec_x + local_sec_z * 8;
+                    let abs_sec_x = task.rx * 8 + (local_sec_x as i32);
+                    let abs_sec_z = task.rz * 8 + (local_sec_z as i32);
+
+                    let sec = local_sections[sec_idx]
+                        .get_or_insert_with(|| LodSection::new_empty(0, abs_sec_x, abs_sec_z));
+
+                    if voxel_grid.min_y < sec.min_y || sec.min_y == 0 {
+                        sec.min_y = voxel_grid.min_y;
+                    }
+                    if voxel_grid.max_y > sec.max_y {
+                        sec.max_y = voxel_grid.max_y;
+                    }
+
+                    let chunk_rel_x = loc.local_x & 3;
+                    let chunk_rel_z = loc.local_z & 3;
+
+                    for cz in 0..16 {
+                        for cx in 0..16 {
+                            let col_idx = cx + cz * 16;
+                            let block_x = chunk_rel_x * 16 + cx;
+                            let block_z = chunk_rel_z * 16 + cz;
+                            let grid_idx = block_x * 64 + block_z;
+
+                            sec.columns[grid_idx] =
+                                std::mem::take(&mut voxel_grid.columns[col_idx].points);
+                        }
+                    }
                 }
             }
 
-            counter_ref.fetch_add(grids.len(), Ordering::Relaxed);
+            counter_ref.fetch_add(chunk_count, Ordering::Relaxed);
             if let Some(ref bar) = pb {
                 bar.inc(1);
             }
-            (grids, hashes)
+
+            let valid_sections: Vec<LodSection> = local_sections.into_iter().flatten().collect();
+            (valid_sections, hashes)
         })
         .collect();
 
@@ -188,33 +240,30 @@ pub fn run_pipeline(cfg: CliConfig) -> Result<()> {
         bar.finish_and_clear();
     }
 
-    let mut all_chunk_grids = Vec::new();
+    let mut all_lod_sections = Vec::new();
     let mut all_chunk_hashes = Vec::new();
-    for (grids, hashes) in parsed_results {
-        all_chunk_grids.extend(grids);
+    for (secs, hashes) in parsed_results {
+        all_lod_sections.extend(secs);
         all_chunk_hashes.extend(hashes);
     }
 
-    let parsed_chunks = all_chunk_grids.len();
+    let parsed_chunks = total_chunks_counter.load(Ordering::Relaxed);
     let parse_time = t1.elapsed().as_secs_f64();
     let chunks_per_sec = (parsed_chunks as f64) / parse_time.max(0.00001);
 
     if !cfg.quiet {
         println!(
-            "Stage 2 [Voxelize]  : Processed {} chunks in {:.3}s ({:.0} chunks/sec)",
-            parsed_chunks, parse_time, chunks_per_sec
+            "Stage 2 [Voxelize]  : Processed {} chunks ({} Level-0 LOD nodes) in {:.3}s ({:.0} chunks/sec)",
+            parsed_chunks,
+            all_lod_sections.len(),
+            parse_time,
+            chunks_per_sec
         );
     }
 
     // Stage 3: Multi-Level Octree Hierarchical Downsampling
     let t2 = Instant::now();
-    let mut all_lod_sections: Vec<LodSection> = Vec::new();
 
-    // Base level (LOD 0)
-    let mut level_0_sections = LodSection::build_level_0(&all_chunk_grids);
-    all_lod_sections.append(&mut level_0_sections);
-
-    // Hierarchical downsampling for detail levels 1..=detail_levels
     for lvl in 1..=cfg.detail_levels {
         let prev_level_sections: Vec<&LodSection> = all_lod_sections
             .iter()
@@ -235,7 +284,18 @@ pub fn run_pipeline(cfg: CliConfig) -> Result<()> {
         let new_parent_sections: Vec<LodSection> = parent_groups_vec
             .into_par_iter()
             .map(|((px, pz), children)| {
-                LodSection::downsample_from_children(lvl, px, pz, &children)
+                #[cfg(all(target_os = "macos", feature = "metal"))]
+                {
+                    if gpu_accelerated {
+                        metal_downsample_quadrant(lvl, px, pz, &children)
+                    } else {
+                        LodSection::downsample_from_children(lvl, px, pz, &children)
+                    }
+                }
+                #[cfg(not(all(target_os = "macos", feature = "metal")))]
+                {
+                    LodSection::downsample_from_children(lvl, px, pz, &children)
+                }
             })
             .collect();
 

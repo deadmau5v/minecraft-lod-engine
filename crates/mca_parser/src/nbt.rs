@@ -15,6 +15,7 @@ pub struct ChunkData {
 #[derive(Debug, Clone)]
 pub struct SectionData {
     pub y: i8,
+    pub is_empty_air: bool,
     pub palette: Vec<String>,
     pub block_indices: [u16; 4096],
     pub biomes: Vec<String>,
@@ -91,6 +92,12 @@ struct LegacyLevelWrapper {
     sections: Option<Vec<ModernSectionNbt>>,
 }
 
+#[inline(always)]
+fn is_air_name(name: &str) -> bool {
+    let clean = name.strip_prefix("minecraft:").unwrap_or(name);
+    clean == "air" || clean == "cave_air" || clean == "void_air"
+}
+
 pub fn parse_chunk_nbt(
     raw_nbt: &[u8],
     fallback_chunk_x: i32,
@@ -119,6 +126,7 @@ pub fn parse_chunk_nbt(
         let y = s.y;
         let mut section = SectionData {
             y,
+            is_empty_air: false,
             palette: Vec::new(),
             block_indices: [0; 4096],
             biomes: Vec::new(),
@@ -127,48 +135,48 @@ pub fn parse_chunk_nbt(
 
         // 1. Modern 1.18+ block_states
         if let Some(bs) = s.block_states {
-            section.palette = bs.palette.into_iter().map(|p| p.name).collect();
-            if section.palette.is_empty() {
-                section.palette.push("minecraft:air".to_string());
-            }
-
-            if let Some(ref data) = bs.data {
-                let p_len = section.palette.len();
-                let bits = if p_len <= 1 {
-                    0
-                } else {
-                    let mut b = 4;
-                    while (1 << b) < p_len {
-                        b += 1;
-                    }
-                    b
-                };
-                BitArrayUnpacker::unpack_4096(bits, data, &mut section.block_indices);
+            if bs.palette.is_empty() || (bs.palette.len() == 1 && is_air_name(&bs.palette[0].name)) {
+                section.is_empty_air = true;
             } else {
-                section.block_indices.fill(0);
+                section.palette = bs.palette.into_iter().map(|p| p.name).collect();
+                if let Some(ref data) = bs.data {
+                    let p_len = section.palette.len();
+                    let bits = if p_len <= 1 {
+                        0
+                    } else {
+                        let mut b = 4;
+                        while (1 << b) < p_len {
+                            b += 1;
+                        }
+                        b
+                    };
+                    BitArrayUnpacker::unpack_4096(bits, data, &mut section.block_indices);
+                } else {
+                    section.block_indices.fill(0);
+                }
             }
         }
         // 2. 1.13 - 1.17 Palette + BlockStates
         else if let Some(p) = s.legacy_palette {
-            section.palette = p.into_iter().map(|e| e.name).collect();
-            if section.palette.is_empty() {
-                section.palette.push("minecraft:air".to_string());
-            }
-
-            if let Some(ref data) = s.legacy_block_states {
-                let p_len = section.palette.len();
-                let bits = if p_len <= 1 {
-                    0
-                } else {
-                    let mut b = 4;
-                    while (1 << b) < p_len {
-                        b += 1;
-                    }
-                    b
-                };
-                BitArrayUnpacker::unpack_4096(bits, data, &mut section.block_indices);
+            if p.is_empty() || (p.len() == 1 && is_air_name(&p[0].name)) {
+                section.is_empty_air = true;
             } else {
-                section.block_indices.fill(0);
+                section.palette = p.into_iter().map(|e| e.name).collect();
+                if let Some(ref data) = s.legacy_block_states {
+                    let p_len = section.palette.len();
+                    let bits = if p_len <= 1 {
+                        0
+                    } else {
+                        let mut b = 4;
+                        while (1 << b) < p_len {
+                            b += 1;
+                        }
+                        b
+                    };
+                    BitArrayUnpacker::unpack_4096(bits, data, &mut section.block_indices);
+                } else {
+                    section.block_indices.fill(0);
+                }
             }
         }
         // 3. 1.2 - 1.12 Legacy Anvil format (Blocks + Data + Add)
@@ -221,39 +229,37 @@ pub fn parse_chunk_nbt(
                 section.block_indices[i] = palette_idx;
             }
 
-            if unique_palette.is_empty() {
-                unique_palette.push("minecraft:air".to_string());
+            if unique_palette.is_empty()
+                || (unique_palette.len() == 1 && is_air_name(&unique_palette[0]))
+            {
+                section.is_empty_air = true;
             }
             section.palette = unique_palette;
         } else {
-            section.palette.push("minecraft:air".to_string());
-            section.block_indices.fill(0);
+            section.is_empty_air = true;
         }
 
-        // Biomes handling
-        if let Some(bm) = s.biomes {
-            section.biomes = bm.palette;
-            if section.biomes.is_empty() {
-                section.biomes.push("minecraft:plains".to_string());
+        // Biomes handling (only if not empty air)
+        if !section.is_empty_air {
+            if let Some(bm) = s.biomes {
+                section.biomes = bm.palette;
+                if section.biomes.is_empty() {
+                    section.biomes.push("minecraft:plains".to_string());
+                }
+                if let Some(ref data) = bm.data {
+                    let p_len = section.biomes.len();
+                    let bits = if p_len <= 1 {
+                        0
+                    } else {
+                        let mut b = 1;
+                        while (1 << b) < p_len {
+                            b += 1;
+                        }
+                        b
+                    };
+                    BitArrayUnpacker::unpack_64(bits, data, &mut section.biome_indices);
+                }
             }
-            if let Some(ref data) = bm.data {
-                let p_len = section.biomes.len();
-                let bits = if p_len <= 1 {
-                    0
-                } else {
-                    let mut b = 1;
-                    while (1 << b) < p_len {
-                        b += 1;
-                    }
-                    b
-                };
-                BitArrayUnpacker::unpack_64(bits, data, &mut section.biome_indices);
-            } else {
-                section.biome_indices.fill(0);
-            }
-        } else {
-            section.biomes.push("minecraft:plains".to_string());
-            section.biome_indices.fill(0);
         }
 
         sections.push(section);

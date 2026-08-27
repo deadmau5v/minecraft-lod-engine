@@ -1,9 +1,12 @@
 pub mod heightmap;
+pub mod metal_compute;
 pub mod octree;
 pub mod palette_lut;
 pub mod simd_blend;
 
 pub use heightmap::{ChunkVoxelGrid, ColumnData, ColumnVoxelPoint};
+#[cfg(all(target_os = "macos", feature = "metal"))]
+pub use metal_compute::{is_metal_gpu_available, metal_downsample_quadrant};
 pub use octree::LodSection;
 pub use palette_lut::{BlockStateMaterial, GlobalPaletteLut};
 pub use simd_blend::{blend_8_colors, blend_8_colors_scalar};
