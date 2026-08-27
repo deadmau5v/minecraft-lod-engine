@@ -571,13 +571,38 @@ fn commit_voxy_staging(staging: &Path, output: &Path) -> Result<()> {
         }
         std::fs::remove_dir(output)?;
     }
-    std::fs::rename(staging, output).with_context(|| {
-        format!(
-            "failed to atomically publish Voxy storage {} to {}",
-            staging.display(),
-            output.display()
-        )
-    })
+
+    match std::fs::rename(staging, output) {
+        Ok(()) => Ok(()),
+        Err(err) => {
+            // Fallback for cross-device moves (EXDEV / ErrorKind::CrossesDevices)
+            copy_dir_all(staging, output).with_context(|| {
+                format!(
+                    "failed to copy staging data from {} to {} after rename failed ({err})",
+                    staging.display(),
+                    output.display()
+                )
+            })?;
+            let _ = std::fs::remove_dir_all(staging);
+            Ok(())
+        }
+    }
+}
+
+fn copy_dir_all(src: &Path, dst: &Path) -> Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let ty = entry.file_type()?;
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+        if ty.is_dir() {
+            copy_dir_all(&from, &to)?;
+        } else {
+            std::fs::copy(&from, &to)?;
+        }
+    }
+    Ok(())
 }
 
 fn validate_single_voxy_dimension(tasks: &[RegionTask]) -> Result<()> {
