@@ -27,6 +27,12 @@ job_*/
 *.tmp
 *.log
 
+# Test world saves and benchmark datasets
+sample_world/
+test_world/
+world/
+fixtures/
+
 # Compressed archives & map data dumps
 *.zip
 *.tar
