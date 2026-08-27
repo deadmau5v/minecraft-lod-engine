@@ -104,32 +104,35 @@ Options:
             Print version information.
 
 
-DEPLOYING TO DISTANT HORIZONS (DH 文件放置与拷贝说明)
----------------------------------------------------
-mca2lod 生成的 `DistantHorizons.sqlite` 可直接拷贝至以下对应路径：
+DEPLOYING TO DISTANT HORIZONS (HOW TO USE)
+------------------------------------------
+The generated `DistantHorizons.sqlite` database file can be directly placed
+into the corresponding Minecraft directory:
 
-1. 单人游戏客户端 (Singleplayer Client):
-   将生成的文件重命名为 `DistantHorizons.sqlite` 并放入世界存档的 `data` 目录：
+1. Singleplayer Client:
+   Place the database inside your world save's `data` directory:
    `.minecraft/saves/<WorldName>/data/DistantHorizons.sqlite`
 
-2. Fabric / Forge / NeoForge 模组服务端 (Modded Server):
-   将文件放入服务端的对应维度数据目录：
-   * 主世界 (Overworld) : <ServerRoot>/world/data/DistantHorizons.sqlite
-   * 下界 (Nether)       : <ServerRoot>/world/DIM-1/data/DistantHorizons.sqlite
-   * 末地 (The End)      : <ServerRoot>/world/DIM1/data/DistantHorizons.sqlite
+2. Fabric / Forge / NeoForge Modded Dedicated Server:
+   Place the database inside the target dimension's `data` directory:
+   * Overworld : <ServerRoot>/world/data/DistantHorizons.sqlite
+   * The Nether: <ServerRoot>/world/DIM-1/data/DistantHorizons.sqlite
+   * The End   : <ServerRoot>/world/DIM1/data/DistantHorizons.sqlite
 
-3. Paper / Spigot / Folia 插件服务端 (DHS Server Plugin):
-   将文件放入 DHS 插件数据目录：
+3. Paper / Spigot / Folia Server (with DHS Plugin):
+   Place the database inside the DHS plugin data directory:
    <ServerRoot>/plugins/DistantHorizons/data/<WorldName>/DistantHorizons.sqlite
-   或世界数据目录：
+   or inside the world directory:
    <ServerRoot>/world/data/DistantHorizons.sqlite
 
-4. 联机客户端本地直连缓存 (Client Multiplayer Cache):
-   若服务器未安装远景传输插件，客户端可直接把预生成的数据库拷贝到本地联机缓存：
+4. Client Multiplayer Cache (Direct Connection):
+   If the dedicated server does not have the DH plugin installed, clients can
+   manually copy the pre-baked database into their local multiplayer cache:
    `.minecraft/Distant_Horizons_server_data/<Server_IP_or_Hash>/DistantHorizons.sqlite`
 
-拷贝完成后启动客户端或服务端，Distant Horizons 即可即时加载完整远景 LOD，
-无需在游戏内消耗服务器 CPU/TPS 跑图生成。
+Once placed, launch Minecraft or start the server. Distant Horizons will
+instantly load the full-resolution LOD terrain with zero server tick lag or
+in-game generation overhead.
 
 
 EXAMPLES
