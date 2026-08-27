@@ -16,6 +16,14 @@ target/
 *.db-wal
 *.db-shm
 
+# Native Voxy / RocksDB outputs
+voxy-storage/
+voxy-output/
+*.sst
+MANIFEST-*
+OPTIONS-*
+LOG.old.*
+
 # Caches and runtime scratch directories
 cache/
 .cache/

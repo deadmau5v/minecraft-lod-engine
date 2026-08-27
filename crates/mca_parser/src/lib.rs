@@ -10,7 +10,7 @@ pub mod region;
 
 pub use bit_array::BitArrayUnpacker;
 pub use decompress::{decompress_chunk_payload, with_decompress_scratch};
-pub use nbt::{parse_chunk_nbt, ChunkData, SectionData};
+pub use nbt::{parse_chunk_nbt, BlockStateIdentity, ChunkData, SectionData};
 pub use region::{ChunkLocation, McaRegion, RegionSource};
 
 #[cfg(test)]
@@ -50,6 +50,23 @@ mod tests {
         let mut decompressed = Vec::new();
         decompress_chunk_payload(&compressed, 2, &mut decompressed).unwrap();
         assert_eq!(&decompressed, original);
+    }
+
+    #[test]
+    fn test_packed_section_light() {
+        let section = SectionData {
+            y: 0,
+            is_empty_air: false,
+            palette: Vec::new(),
+            block_indices: [0; 4096],
+            biomes: Vec::new(),
+            biome_indices: [0; 64],
+            sky_light: vec![0x21],
+            block_light: vec![0x43],
+        };
+        assert_eq!(section.packed_light(0), 0x31);
+        assert_eq!(section.packed_light(1), 0x42);
+        assert_eq!(section.packed_light(2), 0x00);
     }
 
     #[test]

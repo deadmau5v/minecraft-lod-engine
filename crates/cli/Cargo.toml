@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "High-performance headless Minecraft Anvil MCA to Distant Horizons LOD generator"
+description = "High-performance headless Minecraft Anvil MCA to DH and Voxy LOD generator"
 
 [[bin]]
 name = "mca2lod"
@@ -35,3 +35,4 @@ zip = { workspace = true }
 mca_parser = { workspace = true }
 voxelizer = { workspace = true, features = ["metal"] }
 storage_sqlite = { workspace = true }
+storage_voxy = { workspace = true }

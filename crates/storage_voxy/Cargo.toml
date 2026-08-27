@@ -1,0 +1,21 @@
+[package]
+name = "storage_voxy"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Native Voxy RocksDB storage encoder for Minecraft LOD sections"
+
+[dependencies]
+ahash = { workspace = true }
+anyhow = { workspace = true }
+fastnbt = { workspace = true }
+flate2 = { workspace = true }
+mca_parser = { workspace = true }
+rocksdb = { workspace = true }
+serde = { workspace = true }
+voxelizer = { workspace = true }
+zstd = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3.15"

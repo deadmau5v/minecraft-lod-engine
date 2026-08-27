@@ -3,7 +3,7 @@ use ahash::AHashMap;
 use anyhow::Result;
 use fastnbt::{ByteArray, LongArray};
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone)]
 pub struct ChunkData {
@@ -12,14 +12,59 @@ pub struct ChunkData {
     pub sections: Vec<SectionData>,
 }
 
+/// Canonical Minecraft block-state identity retained from the Anvil palette.
+///
+/// Properties are sorted to provide stable hashing and deterministic Voxy mapping IDs.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct BlockStateIdentity {
+    pub name: String,
+    pub properties: BTreeMap<String, String>,
+}
+
+impl BlockStateIdentity {
+    pub fn simple(name: String) -> Self {
+        Self {
+            name,
+            properties: BTreeMap::new(),
+        }
+    }
+
+    pub fn is_air(&self) -> bool {
+        is_air_name(&self.name)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct SectionData {
     pub y: i8,
     pub is_empty_air: bool,
-    pub palette: Vec<String>,
+    pub palette: Vec<BlockStateIdentity>,
     pub block_indices: [u16; 4096],
     pub biomes: Vec<String>,
     pub biome_indices: [u16; 64],
+    /// Packed nibble array in vanilla section order; empty when absent.
+    pub sky_light: Vec<u8>,
+    /// Packed nibble array in vanilla section order; empty when absent.
+    pub block_light: Vec<u8>,
+}
+
+impl SectionData {
+    #[inline]
+    pub fn packed_light(&self, block_index: usize) -> u8 {
+        let sky = nibble_at(&self.sky_light, block_index);
+        let block = nibble_at(&self.block_light, block_index);
+        sky | (block << 4)
+    }
+}
+
+#[inline]
+fn nibble_at(data: &[u8], index: usize) -> u8 {
+    let byte = data.get(index >> 1).copied().unwrap_or(0);
+    if index & 1 == 0 {
+        byte & 0x0f
+    } else {
+        byte >> 4
+    }
 }
 
 #[allow(dead_code)]
@@ -55,6 +100,10 @@ struct ModernSectionNbt {
     legacy_data: Option<ByteArray>,
     #[serde(rename = "Add")]
     legacy_add: Option<ByteArray>,
+    #[serde(rename = "SkyLight")]
+    sky_light: Option<ByteArray>,
+    #[serde(rename = "BlockLight")]
+    block_light: Option<ByteArray>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -71,7 +120,16 @@ struct ModernBlockStateEntry {
     #[serde(rename = "Name")]
     name: String,
     #[serde(rename = "Properties")]
-    properties: Option<HashMap<String, String>>,
+    properties: Option<BTreeMap<String, String>>,
+}
+
+impl From<ModernBlockStateEntry> for BlockStateIdentity {
+    fn from(value: ModernBlockStateEntry) -> Self {
+        Self {
+            name: value.name,
+            properties: value.properties.unwrap_or_default(),
+        }
+    }
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -131,14 +189,25 @@ pub fn parse_chunk_nbt(
             block_indices: [0; 4096],
             biomes: Vec::new(),
             biome_indices: [0; 64],
+            sky_light: s
+                .sky_light
+                .as_ref()
+                .map(|bytes| bytes.iter().map(|&byte| byte as u8).collect())
+                .unwrap_or_default(),
+            block_light: s
+                .block_light
+                .as_ref()
+                .map(|bytes| bytes.iter().map(|&byte| byte as u8).collect())
+                .unwrap_or_default(),
         };
 
         // 1. Modern 1.18+ block_states
         if let Some(bs) = s.block_states {
-            if bs.palette.is_empty() || (bs.palette.len() == 1 && is_air_name(&bs.palette[0].name)) {
+            if bs.palette.is_empty() || (bs.palette.len() == 1 && is_air_name(&bs.palette[0].name))
+            {
                 section.is_empty_air = true;
             } else {
-                section.palette = bs.palette.into_iter().map(|p| p.name).collect();
+                section.palette = bs.palette.into_iter().map(Into::into).collect();
                 if let Some(ref data) = bs.data {
                     let p_len = section.palette.len();
                     let bits = if p_len <= 1 {
@@ -161,7 +230,7 @@ pub fn parse_chunk_nbt(
             if p.is_empty() || (p.len() == 1 && is_air_name(&p[0].name)) {
                 section.is_empty_air = true;
             } else {
-                section.palette = p.into_iter().map(|e| e.name).collect();
+                section.palette = p.into_iter().map(Into::into).collect();
                 if let Some(ref data) = s.legacy_block_states {
                     let p_len = section.palette.len();
                     let bits = if p_len <= 1 {
@@ -234,7 +303,10 @@ pub fn parse_chunk_nbt(
             {
                 section.is_empty_air = true;
             }
-            section.palette = unique_palette;
+            section.palette = unique_palette
+                .into_iter()
+                .map(BlockStateIdentity::simple)
+                .collect();
         } else {
             section.is_empty_air = true;
         }

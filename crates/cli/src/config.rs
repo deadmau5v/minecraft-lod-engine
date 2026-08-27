@@ -1,7 +1,17 @@
 //! Command-line interface definitions and configuration parser for `mca2lod`.
 
-use clap::Parser;
-use std::path::PathBuf;
+use clap::{Parser, ValueEnum};
+use std::path::{Path, PathBuf};
+
+/// Output storage backend selected for the generated LOD data.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum OutputFormat {
+    /// Distant Horizons v2 SQLite database.
+    #[value(alias = "distant-horizons")]
+    Dh,
+    /// Native Voxy RocksDB section storage (hierarchy levels 0 through 4).
+    Voxy,
+}
 
 /// Command-line configuration structure for the `mca2lod` pipeline.
 #[derive(Parser, Debug, Clone)]
@@ -9,12 +19,11 @@ use std::path::PathBuf;
     name = "mca2lod",
     author = "deadmau5v",
     version = "1.0.0",
-    about = "Ultra-fast headless Minecraft Anvil MCA to Distant Horizons LOD generator",
+    about = "Ultra-fast headless Minecraft Anvil MCA to DH or Voxy LOD generator",
     long_about = "mca2lod is a production-grade, highly parallel headless Level of Detail (LOD)\n\
                   baking pipeline for Minecraft worlds. It parses multi-version Anvil MCA region\n\
-                  files, extracts voxel heightmaps, constructs multi-level downsampled octrees,\n\
-                  and serializes directly into Distant Horizons SQLite database format with\n\
-                  maximum I/O throughput."
+                  files and writes either Distant Horizons v2 SQLite data or Voxy's native\n\
+                  hierarchical RocksDB section storage with maximum I/O throughput."
 )]
 pub struct CliConfig {
     /// Path to Minecraft world save directory or .zip archive
@@ -26,13 +35,22 @@ pub struct CliConfig {
     )]
     pub map: PathBuf,
 
-    /// Destination Distant Horizons SQLite database path
+    /// Output storage format.
+    #[arg(
+        long = "format",
+        value_enum,
+        default_value_t = OutputFormat::Dh,
+        help = "Output backend: dh (SQLite) or voxy (native RocksDB storage)"
+    )]
+    pub format: OutputFormat,
+
+    /// Destination database file or storage directory.
     #[arg(
         short = 'o',
         long = "output",
-        value_name = "FILE",
+        value_name = "PATH",
         default_value = "DistantHorizons.sqlite",
-        help = "Target Distant Horizons SQLite database output path"
+        help = "DH SQLite file or Voxy storage directory"
     )]
     pub output: PathBuf,
 
@@ -77,16 +95,16 @@ pub struct CliConfig {
         long = "detail-levels",
         default_value_t = 4,
         value_parser = clap::value_parser!(u8).range(0..=10),
-        help = "Maximum hierarchical LOD detail levels to compute (default: 4)"
+        help = "Maximum DH hierarchy level; Voxy always writes required levels 0..=4"
     )]
     pub detail_levels: u8,
 
-    /// Zstandard compression level for FullData blobs (1-22)
+    /// Zstandard compression level for DH blobs or Voxy sections (1-22)
     #[arg(
         long = "zstd-level",
         default_value_t = 3,
         value_parser = clap::value_parser!(i32).range(1..=22),
-        help = "Zstandard compression level for SQLite blob payloads (default: 3)"
+        help = "Zstandard level for DH blobs or Voxy sections (default: 3; Voxy recommends 1)"
     )]
     pub zstd_level: i32,
 
@@ -105,4 +123,14 @@ pub struct CliConfig {
         help = "Operate quietly, suppressing progress bars and non-critical messages"
     )]
     pub quiet: bool,
+}
+
+impl CliConfig {
+    pub fn resolved_output(&self) -> PathBuf {
+        if self.format == OutputFormat::Voxy && self.output == Path::new("DistantHorizons.sqlite") {
+            PathBuf::from("voxy-storage")
+        } else {
+            self.output.clone()
+        }
+    }
 }

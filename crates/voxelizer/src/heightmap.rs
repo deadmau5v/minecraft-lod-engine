@@ -66,7 +66,7 @@ impl ChunkVoxelGrid {
             let palette_materials: Vec<_> = section
                 .palette
                 .iter()
-                .map(|name| lut.get_material_by_name(name))
+                .map(|state| lut.get_material_by_name(&state.name))
                 .collect();
 
             // Fast-path: single uniform solid material across whole 16x16x16 section

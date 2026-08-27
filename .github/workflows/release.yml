@@ -163,7 +163,7 @@ jobs:
           body: |
             ## Minecraft LOD Engine (${{ github.ref_name || inputs.tag_name }})
             
-            High-performance headless Level of Detail (LOD) pre-rendering and batch processing pipeline for Minecraft server worlds.
+            High-performance headless Level of Detail (LOD) pre-rendering pipeline for Distant Horizons SQLite and native Voxy RocksDB storage.
 
             ### Release Binaries & SHA-256 Checksums
             Pre-compiled release packages with embedded `README.txt`:
@@ -183,7 +183,10 @@ jobs:
             # Linux / macOS:
             ./mca2lod --map /path/to/world.zip --output DistantHorizons.sqlite --radius 64
 
-            # Windows PowerShell:
+            # Native Voxy storage for VoxyServer:
+            ./mca2lod --format voxy --map /path/to/world --output /path/to/empty/storage --radius 512 --zstd-level 1
+
+            # Windows PowerShell (DH):
             .\mca2lod.exe --map C:\path\to\world --output DistantHorizons.sqlite --radius 64
             ```
           draft: false

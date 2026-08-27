@@ -4,6 +4,7 @@ members = [
     "crates/mca_parser",
     "crates/voxelizer",
     "crates/storage_sqlite",
+    "crates/storage_voxy",
     "crates/cli",
 ]
 
@@ -31,6 +32,7 @@ zstd = "0.13"
 flate2 = { version = "1.0", default-features = false, features = ["rust_backend"] }
 memmap2 = "0.9"
 rusqlite = { version = "0.32", features = ["bundled"] }
+rocksdb = { version = "0.22", default-features = false, features = ["zstd"] }
 clap = { version = "4.5", features = ["derive", "env"] }
 indicatif = { version = "0.17", features = ["rayon"] }
 tracing = "0.1"
@@ -43,6 +45,7 @@ zip = { version = "2.2", default-features = false, features = ["deflate"] }
 mca_parser = { path = "crates/mca_parser" }
 voxelizer = { path = "crates/voxelizer" }
 storage_sqlite = { path = "crates/storage_sqlite" }
+storage_voxy = { path = "crates/storage_voxy" }
 
 [profile.release]
 opt-level = 3

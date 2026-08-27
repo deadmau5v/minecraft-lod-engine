@@ -2,7 +2,7 @@ name: Continuous Integration
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "feature/**" ]
   pull_request:
     branches: [ "main" ]
   workflow_dispatch:
@@ -40,6 +40,12 @@ jobs:
 
       - name: Run Test Suite
         run: cargo test --workspace --all-targets --verbose
+
+      - name: Validate DH and Voxy CLI Backends
+        run: |
+          cargo run --bin mca2lod -- --help
+          cargo test -p storage_voxy --verbose
+        shell: bash
 
       - name: Release Build Verification
         run: cargo build --release --workspace
