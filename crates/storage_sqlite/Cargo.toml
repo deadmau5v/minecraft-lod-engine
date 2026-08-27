@@ -1,0 +1,16 @@
+[package]
+name = "storage_sqlite"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+ahash = { workspace = true }
+byteorder = { workspace = true }
+rusqlite = { workspace = true }
+zstd = { workspace = true }
+voxelizer = { workspace = true }
+mca_parser = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }

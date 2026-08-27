@@ -1,0 +1,45 @@
+name: Continuous Integration
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-and-test:
+    name: Lint, Test & Validate (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Code Formatting Check
+        if: runner.os == 'Linux'
+        run: cargo fmt --all -- --check
+
+      - name: Static Analysis (Clippy)
+        run: cargo clippy --all-targets --workspace -- -D warnings
+
+      - name: Run Test Suite
+        run: cargo test --workspace --all-targets --verbose
+
+      - name: Release Build Verification
+        run: cargo build --release --workspace

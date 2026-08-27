@@ -1,0 +1,59 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/mca_parser",
+    "crates/voxelizer",
+    "crates/storage_sqlite",
+    "crates/cli",
+]
+
+[workspace.package]
+version = "1.0.0"
+edition = "2021"
+authors = ["deadmau5v"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/deadmau5v/minecraft-lod-engine"
+readme = "README.txt"
+rust-version = "1.75.0"
+
+[workspace.dependencies]
+ahash = "0.8"
+rayon = "1.10"
+crossbeam = "0.8"
+flume = "0.11"
+parking_lot = "0.12"
+serde = { version = "1.0", features = ["derive"] }
+serde_bytes = "0.11"
+fastnbt = "2.5"
+byteorder = "1.5"
+lz4_flex = "0.11"
+zstd = "0.13"
+flate2 = { version = "1.0", default-features = false, features = ["rust_backend"] }
+memmap2 = "0.9"
+rusqlite = { version = "0.32", features = ["bundled"] }
+clap = { version = "4.5", features = ["derive", "env"] }
+indicatif = { version = "0.17", features = ["rayon"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+anyhow = "1.0"
+thiserror = "2.0"
+zip = { version = "2.2", default-features = false, features = ["deflate"] }
+
+# Internal workspace dependencies
+mca_parser = { path = "crates/mca_parser" }
+voxelizer = { path = "crates/voxelizer" }
+storage_sqlite = { path = "crates/storage_sqlite" }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+overflow-checks = false
+strip = true
+debug = false
+
+[profile.bench]
+opt-level = 3
+lto = "fat"
+codegen-units = 1

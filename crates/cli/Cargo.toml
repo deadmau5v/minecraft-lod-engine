@@ -1,0 +1,29 @@
+[package]
+name = "mca2lod"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "High-performance headless Minecraft Anvil MCA to Distant Horizons LOD generator"
+
+[[bin]]
+name = "mca2lod"
+path = "src/main.rs"
+
+[dependencies]
+ahash = { workspace = true }
+byteorder = { workspace = true }
+clap = { workspace = true }
+crossbeam = { workspace = true }
+flume = { workspace = true }
+indicatif = { workspace = true }
+memmap2 = { workspace = true }
+rayon = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+zip = { workspace = true }
+
+mca_parser = { workspace = true }
+voxelizer = { workspace = true }
+storage_sqlite = { workspace = true }
