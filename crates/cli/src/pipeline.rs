@@ -43,10 +43,14 @@ pub fn run_pipeline(cfg: CliConfig) -> Result<()> {
     }
 
     if !cfg.quiet {
-        println!("================================================================================");
+        println!(
+            "================================================================================"
+        );
         println!("                            MINECRAFT-LOD-ENGINE");
         println!("                 High-Performance Headless LOD Pre-Baker");
-        println!("================================================================================");
+        println!(
+            "================================================================================"
+        );
         println!("Source Map       : {}", cfg.map.display());
         println!("Destination DB   : {}", cfg.output.display());
         println!("Center Position  : ({}, {}) [Blocks]", cfg.cx, cfg.cz);
